@@ -1,12 +1,12 @@
-# cloudmonkey-interoute (using Cloudmonkey version 5.3.3)
+# cloudmonkey-interoute (fork from cloudstack-cloudmonkey version 5.3.3)
 
 This is a fork of the [Cloudmonkey command line interface](https://github.com/apache/cloudstack-cloudmonkey), version 5.3.3, modified for use with the [Interoute Virtual Data Centre](https://cloudstore.interoute.com/what_is_vdc).
 
 The modification required is to handle API access to the different VDC regions (Europe, North America (USA), Asia). This is implemented using a new configuration variable `region`.
 
-The default value is 'europe'. Note that the master version of Cloudmonkey will access the default region without modification.
+The default value is 'europe'. Note that the origin version of Cloudmonkey (cloudstack-cloudmonkey) will access the default region without modification.
 
-See the original repo here: [cloudstack-cloudmonkey](https://github.com/apache/cloudstack-cloudmonkey)
+See the origin repo here: [cloudstack-cloudmonkey](https://github.com/apache/cloudstack-cloudmonkey)
 
 ## Modifications
 

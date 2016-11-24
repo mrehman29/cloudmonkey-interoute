@@ -32,7 +32,7 @@ Push the new branch to github.com:
 
     git push origin interoute_mod_531_regions
 
-At this point, download the modified branch into a 'virtualenv' and test it:
+At this point, download the modified branch into a ['virtualenv'](http://www.pythoncentral.io/how-to-install-virtualenv-python) and test it:
 
     pip install git+https://github.com/Interoute/cloudmonkey-interoute.git@interoute_mod_531_regions
 
