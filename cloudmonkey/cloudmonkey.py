@@ -67,7 +67,8 @@ except ImportError, e:
     print("Module readline not found, autocompletions will fail", e)
 else:
     import rlcompleter
-    if 'libedit' in readline.__doc__:
+    readline_doc = getattr(readline, '__doc__', '')
+    if readline_doc is not None and 'libedit' in readline_doc:
         readline.parse_and_bind("bind ^I rl_complete")
         readline.parse_and_bind("bind ^R em-inc-search-prev")
         normal_readline = False
@@ -93,8 +94,10 @@ class CloudMonkeyShell(cmd.Cmd, object):
     host = "localhost"
     port = "8080"
     path = "/client/api"
+    hook_count = 0
 
     def __init__(self, pname, cfile):
+        self.default_apis = self.completenames('')
         self.program_name = pname
         self.config_file = cfile
         self.config_options = read_config(self.get_attr, self.set_attr,
@@ -152,6 +155,13 @@ class CloudMonkeyShell(cmd.Cmd, object):
             except KeyboardInterrupt:
                 print("^C")
 
+    def precmd(self, line):
+        self.hook_count -= 1
+        if self.hook_count <= 0:
+            self.hook_count = 0
+            readline.set_startup_hook()
+        return line
+
     def loadcache(self):
         if os.path.exists(self.cache_file):
             self.apicache = loadcache(self.cache_file)
@@ -161,9 +171,21 @@ class CloudMonkeyShell(cmd.Cmd, object):
             self.verbs = self.apicache['verbs']
 
         for verb in self.verbs:
+            handler_name = "do_" + str(verb)
+            handler_doc = str("%ss resources" % verb.capitalize())
+
+            if hasattr(self, handler_name) and getattr(self, handler_name).__doc__ == handler_doc:
+                continue
+
             def add_grammar(verb):
+                default_handler = None
+                if self.default_apis.__contains__(verb):
+                    default_handler = getattr(self, handler_name)
+
                 def grammar_closure(self, args):
                     if not args:
+                        if default_handler:
+                            default_handler(args)
                         return
                     args = args.decode("utf-8")
                     if self.pipe_runner(u"{0} {1}".format(verb, args)):
@@ -176,15 +198,18 @@ class CloudMonkeyShell(cmd.Cmd, object):
                         cmd = self.apicache[verb][args_partition[0]]['name']
                         args = args_partition[2]
                     except KeyError, e:
-                        self.monkeyprint("Error: invalid %s api arg " % verb,
+                        if default_handler:
+                            default_handler(args)
+                        else:
+                            self.monkeyprint("Error: invalid %s api arg " % verb,
                                          str(e))
                         return
                     self.default(u"{0} {1}".format(cmd, args))
                 return grammar_closure
 
             grammar_handler = add_grammar(verb)
-            grammar_handler.__doc__ = "%ss resources" % verb.capitalize()
-            grammar_handler.__name__ = "do_" + str(verb)
+            grammar_handler.__doc__ = handler_doc
+            grammar_handler.__name__ = handler_name
             setattr(self.__class__, grammar_handler.__name__, grammar_handler)
 
     def monkeyprint(self, *args):
@@ -272,18 +297,22 @@ class CloudMonkeyShell(cmd.Cmd, object):
                 if isinstance(result[0], dict):
                     keys = result[0].keys()
                     writer = csv.DictWriter(sys.stdout, keys)
-                    writer.writeheader()
+                    print ','.join(keys)
                     for item in result:
+                        row = {}
                         for k in keys:
                             if k not in item:
-                                item[k] = None
+                                row[k] = None
                             else:
                                 if type(item[k]) is unicode:
-                                    item[k] = item[k].encode('utf8')
-                        writer.writerow(item)
+                                    row[k] = item[k].encode('utf8')
+                                else:
+                                    row[k] = item[k]
+                        writer.writerow(row)
             elif isinstance(result, dict):
-                writer = csv.DictWriter(sys.stdout, result.keys())
-                writer.writeheader()
+                keys = result.keys()
+                writer = csv.DictWriter(sys.stdout, keys)
+                print ','.join(keys)
                 writer.writerow(result)
 
         def print_result_tabular(result):
@@ -571,7 +600,9 @@ class CloudMonkeyShell(cmd.Cmd, object):
                         uuids = self.update_param_cache(api, response)
                     if len(uuids) > 1:
                         print
-                        for option in self.param_cache[api]["options"]:
+                        options = sorted(self.param_cache[api]["options"],
+                                         key=lambda x: x[1])
+                        for option in options:
                             uuid = option[0]
                             name = option[1]
                             if uuid.startswith(value):
@@ -659,7 +690,7 @@ class CloudMonkeyShell(cmd.Cmd, object):
         separator = mline[1]
         value = mline[2].lstrip()
         if separator == "":
-            return [s for s in self.config_options if s.startswith(option)]
+            return [s for s in self.config_options if s.startswith(option)] + self.completedefault(text, line, begidx, endidx)
         elif option == "profile":
             return [s for s in self.profile_names if s.startswith(value)]
         elif option == "display":
@@ -668,6 +699,8 @@ class CloudMonkeyShell(cmd.Cmd, object):
         elif option in ["asyncblock", "color", "paramcompletion",
                         "verifysslcert"]:
             return [s for s in ["true", "false"] if s.startswith(value)]
+        elif "set" in self.apicache["verbs"]:
+            return self.completedefault(text, line, begidx, endidx)
 
         return []
 
@@ -717,10 +750,40 @@ class CloudMonkeyShell(cmd.Cmd, object):
             email=test@test.tt firstname=user$i lastname=user$i \
             password=password username=user$i; done
         """
+        if args.isdigit():
+            self.do_history("!" + args)
+            return
         if isinstance(args, str):
             os.system(args)
         else:
             os.system(args.encode("utf-8"))
+
+    def do_history(self, args):
+        """
+        Prints cloudmonkey history
+        """
+        if self.pipe_runner("history " + args):
+            return
+        startIdx = 1
+        endIdx = readline.get_current_history_length()
+        numLen = len(str(endIdx))
+        historyArg = args.split(' ')[0]
+        if historyArg.isdigit():
+            startIdx = endIdx - long(historyArg)
+            if startIdx < 1:
+                startIdx = 1
+        elif historyArg == "clear" or historyArg == "c":
+            readline.clear_history()
+            print "CloudMonkey history cleared"
+            return
+        elif len(historyArg) > 1 and historyArg[0] == "!" and historyArg[1:].isdigit():
+            command = readline.get_history_item(long(historyArg[1:]))
+            readline.set_startup_hook(lambda: readline.insert_text(command))
+            self.hook_count = 1
+            return
+        for idx in xrange(startIdx, endIdx):
+            self.monkeyprint("%s %s" % (str(idx).rjust(numLen),
+                                        readline.get_history_item(idx)))
 
     def do_help(self, args):
         """
