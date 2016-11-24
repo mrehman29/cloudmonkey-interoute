@@ -24,7 +24,7 @@ Do the merge:
 
     git pull upstream master
 
-This will create some conflicts which will require manual edits, then 'git commit' these edits in the branch. Also edit `README.md` to change the Cloudmonkey version number.
+This will create some conflicts which will require manual edits. Also edit `README.md` to change the Cloudmonkey version number, and change the modification date for the intro string "[MODIFIED FOR INTEROUTE VDC 2015-03-28]" in `cloudmonkey.py`. Now 'git commit' these edits in the branch:
 
     git commit -a -m "Modified Cloudmonkey v5.3.1 for Interoute"
  
